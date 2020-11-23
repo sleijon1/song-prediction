@@ -6,9 +6,10 @@ import sklearn.linear_model as skl_lm
 import sklearn.model_selection as skl_ms
 import sklearn.neighbors as skl_nb
 import sklearn.preprocessing as skl_pre
+from sklearn.ensemble import RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import KFold, cross_val_score, train_test_split
 from sklearn.preprocessing import MinMaxScaler
 
 pd.set_option("display.max_rows", None, "display.max_columns", None)
@@ -237,13 +238,26 @@ scaler.fit(X_train)
 X_train_scaled = scaler.transform(X_train)
 X_test_scaled = scaler.transform(X_test)
 
+# ----------------- LOGREG ------------------- #
+print("------------------- Logistic Regression -------------------")
 log_reg = LogisticRegression()
 log_reg.fit(X_train, y_train)
 THRESHOLD = 0.0
 preds = np.where(log_reg.predict_proba(X_test)[:,1] > THRESHOLD, 1, 0)
-
 score_like = accuracy_score(y_test, preds)
-score = log_reg.score(X_test, y_test)
+score_lr = log_reg.score(X_test, y_test)
+cv_mean_lr = np.mean(cross_val_score(log_reg, X, y, cv=10))
+print("Score (always predicting LIKE (log reg)):", score_like)
+print("Score (log reg):", score_lr)
+print("Cross validation mean score (log reg):", cv_mean_lr)
+# ----------------- LOGREG ------------------- #
 
-print("Score (always predicting LIKE):", score_like)
-print("Score (real log reg):", score)
+# ----------------- RANDOM FOREST ------------ #
+print("------------------- Random forest -------------------")
+ran_for = RandomForestClassifier()
+ran_for.fit(X_train, y_train)
+score_rf = ran_for.score(X_test, y_test)
+cv_mean_rf = np.mean(cross_val_score(ran_for, X, y, cv=10))
+print("Score (random forest):", score_rf)
+print("Cross validation mean score (random forest):", cv_mean_rf)
+# ----------------- RANDOM FOREST ------------ #
