@@ -6,9 +6,11 @@ import sklearn.linear_model as skl_lm
 import sklearn.model_selection as skl_ms
 import sklearn.neighbors as skl_nb
 import sklearn.preprocessing as skl_pre
+import sklearn.discriminant_analysis as skl_da
+from sklearn.neighbors import KNeighborsClassifier
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import accuracy_score
+from sklearn.metrics import accuracy_score, confusion_matrix, plot_confusion_matrix
 from sklearn.model_selection import KFold, cross_val_score, train_test_split
 from sklearn.preprocessing import MinMaxScaler
 
@@ -206,41 +208,116 @@ data.corr()
 data.head()
 
 
-X = data[['acousticness', 'danceability', 'duration', 'energy', 'instrumentalness', 'key',\
-          'liveness', 'loudness', 'mode', 'speechiness', 'tempo','time_signature', 'valence']]
+#X = data[['acousticness', 'danceability', 'duration', 'energy', 'instrumentalness', 'key',\
+#          'liveness', 'loudness', 'mode', 'speechiness', 'tempo','time_signature', 'valence']]
+X = data[['acousticness', 'danceability', 'energy', \
+          'loudness', 'speechiness', 'valence']]
 y = data['label']
 
 
-# creating dummies
-# which features we assume as categorical?
-# 'time_signature', 'key' or both?
-X = pd.get_dummies(X, columns = ['time_signature', 'key'])
+# creating dummies (if line 211+212 is used)
+#X = pd.get_dummies(X, columns = ['time_signature', 'key'])
 print(X.head())
 
-# creating train-test split 75/25
 X_train, X_test, y_train, y_test = train_test_split(X, y, random_state = 1)
-
-# normalizing the data is extremely important for some models
-# for kNN as it is based on measuring the distance between the points
-# if we have differently scalled data then some features will influence the model much more whereas other will
-# not influence at all and it could become crutial
-
-# minmaxscaler make all the features' values to be between 0 and 1
-# it is done with the help of (x - min) / (max - min)
-
-# it is vital to scale the data after train-test split to avoid any wrong results on the new data
-# we also must scale them in the same way:
-# we fit the scaler on training set and then use the same scaler to scale both train and test sets
 
 scaler = MinMaxScaler()
 scaler.fit(X_train)
 
-X_train_scaled = scaler.transform(X_train)
-X_test_scaled = scaler.transform(X_test)
+X = scaler.transform(X)
+X_train = scaler.transform(X_train)
+X_test = scaler.transform(X_test)
 
+
+# initial models
+log_reg = LogisticRegression(solver='liblinear', penalty='l1')
+ran_for = RandomForestClassifier()
+knn = KNeighborsClassifier(n_neighbors = 5)
+
+
+# cross validation to compare models on the same data, using the same features
+n_fold = 10
+
+models = []
+models.append(log_reg)
+models.append(ran_for)
+models.append(knn)
+models.append(skl_da.LinearDiscriminantAnalysis())
+models.append(skl_da.QuadraticDiscriminantAnalysis())
+
+
+for fig_num in plt.get_fignums():
+	plt.close(fig_num)
+
+
+conf_fig, ((ax1, ax2, ax3,), (ax4, ax5, ax6)) = \
+plt.subplots(2, 3, figsize=(20, 20), constrained_layout=True)
+
+axis = [ax1, ax2, ax3, ax4, ax5]
+
+for m in range(np.shape(models)[0]):
+	model = models[m]
+	model.fit(X_train, y_train)
+	prediction = model.predict(X_test)
+	#conf_matrix = confusion_matrix(y_test, prediction)
+	plot_conf_matrix = plot_confusion_matrix(model, X_test, y_test, ax=axis[m]) 
+	plot_conf_matrix.ax_.set_title(model.__class__.__name__)
+ax6.axis("off")
+
+plt.show()
+
+
+misclassification = np.zeros((n_fold, len(models)))
+cv = skl_ms.KFold(n_splits=n_fold, random_state=1, shuffle=True)
+
+for i, (train_index, val_index) in enumerate(cv.split(X)):
+	X_train, X_val = X[train_index], X[val_index]
+	y_train, y_val = y[train_index], y[val_index]
+
+	for m in range(np.shape(models)[0]):
+		model = models[m]
+		model.fit(X_train, y_train)
+		prediction = model.predict(X_val)
+		misclassification[i,m] = np.mean(prediction != y_val)
+
+myfig, ax1 = plt.subplots() 
+ax1.boxplot(misclassification)
+ax1.set_title('Cross Validation Error')
+ax1.set_ylabel('Validation Error')
+ax1.set_xlabel('Model')
+
+
+plt.xticks(np.arange(len(models))+1, ('logReg','ranFor','k-NN', 'LDA', 'QDA'))
+plt.show()
+
+
+
+# Actual classifying
+data_classify = pd.read_csv('data/songs_to_classify.csv')
+
+X_classify = data_classify[['acousticness', 'danceability', 'energy', \
+          'loudness', 'speechiness', 'valence']]
+
+ran_for = RandomForestClassifier()
+
+scaler = MinMaxScaler()
+scaler.fit(X)
+
+X = scaler.transform(X)
+X_classify = scaler.transform(X_classify)
+ran_for.fit(X,y)
+prediction = ran_for.predict(X_classify)
+
+mystr = ""
+for val in prediction:
+	mystr += str(val)
+print("Classifying 200 songs: \n" + mystr)
+
+
+"""
 # ----------------- LOGREG ------------------- #
 print("------------------- Logistic Regression -------------------")
-log_reg = LogisticRegression()
+log_reg = LogisticRegression(solver='liblinear', penalty='l1')
 log_reg.fit(X_train, y_train)
 THRESHOLD = 0.0
 preds = np.where(log_reg.predict_proba(X_test)[:,1] > THRESHOLD, 1, 0)
@@ -253,11 +330,12 @@ print("Cross validation mean score (log reg):", cv_mean_lr)
 # ----------------- LOGREG ------------------- #
 
 # ----------------- RANDOM FOREST ------------ #
-print("------------------- Random forest -------------------")
-ran_for = RandomForestClassifier()
-ran_for.fit(X_train, y_train)
-score_rf = ran_for.score(X_test, y_test)
-cv_mean_rf = np.mean(cross_val_score(ran_for, X, y, cv=10))
-print("Score (random forest):", score_rf)
-print("Cross validation mean score (random forest):", cv_mean_rf)
+#print("------------------- Random forest -------------------")
+#ran_for = RandomForestClassifier()
+#ran_for.fit(X_train, y_train)
+#score_rf = ran_for.score(X_test, y_test)
+#cv_mean_rf = np.mean(cross_val_score(ran_for, X, y, cv=10))
+#print("Score (random forest):", score_rf)
+#print("Cross validation mean score (random forest):", cv_mean_rf)
 # ----------------- RANDOM FOREST ------------ #
+"""
